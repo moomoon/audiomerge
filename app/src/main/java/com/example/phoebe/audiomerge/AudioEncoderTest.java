@@ -19,7 +19,7 @@ import java.util.LinkedList;
 public class AudioEncoderTest {
     private static final String TAG = "EncoderTest";
     private static final boolean VERBOSE = false;
-//    private static final int kNumInputBytes = 256 * 1024;
+    //    private static final int kNumInputBytes = 256 * 1024;
     private static final long kTimeoutUs = 10000;
     private OutputStream mFileOutputStream;
     public void testAACEncoders() {
@@ -52,7 +52,7 @@ public class AudioEncoderTest {
                 }
             }
         }
- //       testEncoder("audio/mp4a-latm", formats);
+        //       testEncoder("audio/mp4a-latm", formats);
     }
     public int queueInputBuffer(
             MediaCodec codec, ByteBuffer[] inputBuffers, int index) {
@@ -93,12 +93,15 @@ public class AudioEncoderTest {
         } catch (IllegalStateException e) {
             Log.e(TAG, "codec '" + mime + "' failed configuration.");
         }
+
+        int sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
         codec.start();
         ByteBuffer[] codecInputBuffers = codec.getInputBuffers();
         ByteBuffer[] codecOutputBuffers = codec.getOutputBuffers();
         int numBytesSubmitted = 0;
         boolean doneSubmittingInput = false;
         int numBytesDequeued = 0;
+        int presentationTimeUS = 0;
         while (true) {
             int index;
             if (!doneSubmittingInput) {
@@ -109,7 +112,7 @@ public class AudioEncoderTest {
                                 index,
                                 0 /* offset */,
                                 0 /* size */,
-                                0 /* timeUs */,
+                                presentationTimeUS /* timeUs */,
                                 MediaCodec.BUFFER_FLAG_END_OF_STREAM);
                         if (VERBOSE) {
                             Log.d(TAG, "queued input EOS.");
@@ -122,14 +125,16 @@ public class AudioEncoderTest {
                         buffer.clear();
                         int size = Math.min(buffer.limit(), inputData.length - numBytesSubmitted);
                         buffer.put(inputData, numBytesSubmitted, size);
-                        codec.queueInputBuffer(index, 0 /* offset */, size, 0 /* timeUs */, 0);
+                        codec.queueInputBuffer(index, 0 /* offset */, size, presentationTimeUS /* timeUs */, 0);
 
                         numBytesSubmitted += size;
+                        presentationTimeUS = 500000 * numBytesSubmitted / sampleRate;
                         if (VERBOSE) {
                             Log.d(TAG, "queued " + size + " bytes of input data.");
                         }
                     }
                 }
+
             }
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
             index = codec.dequeueOutputBuffer(info, kTimeoutUs /* timeoutUs */);
@@ -175,7 +180,6 @@ public class AudioEncoderTest {
             Log.d(TAG, "queued a total of " + numBytesSubmitted + "bytes, "
                     + "dequeued " + numBytesDequeued + " bytes.");
         }
-        int sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
         int channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
         int inBitrate = sampleRate * channelCount * 16;  // bit/sec
         int outBitrate = format.getInteger(MediaFormat.KEY_BIT_RATE);

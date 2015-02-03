@@ -27,6 +27,9 @@ public class AudioDecoder {
     private boolean mInputEOS = false;
     private boolean mOutputEOS = false;
 
+
+    private long mPresentationTimeUs = 0L;
+
     public AudioDecoder(String filePath) {
         this.mFilePath = filePath;
         this.mResult = new DecodedSample();
@@ -58,6 +61,10 @@ public class AudioDecoder {
         }
     }
 
+    public long getSamplePresentationTimeUs() {
+        return mPresentationTimeUs;
+    }
+
     public boolean pollSample() {
         MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
         if (!mInputEOS) {
@@ -66,19 +73,24 @@ public class AudioDecoder {
                 ByteBuffer dstBuf = mInputBuffers[inputBufIndex];
                 int sampleSize =
                         mExtractor.readSampleData(dstBuf, 0 /* offset */);
-                long presentationTimeUs = 0;
                 if (sampleSize < 0) {
                     Log.e(TAG, "saw input EOS.");
                     mInputEOS = true;
                     sampleSize = 0;
                 } else {
-                    presentationTimeUs = mExtractor.getSampleTime();
+                    mPresentationTimeUs = mExtractor.getSampleTime();
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < sampleSize / 2 * 2; i += 2) {
+                        sb.append(String.format("[%d]%h", i, dstBuf.getShort(i)));
+                    }
+
+                    Log.e("readSample", sb.toString());
                 }
                 mDecoder.queueInputBuffer(
                         inputBufIndex,
                         0 /* offset */,
                         sampleSize,
-                        presentationTimeUs,
+                        mPresentationTimeUs,
                         mInputEOS ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0);
                 if (!mInputEOS) {
                     mExtractor.advance();
@@ -92,6 +104,7 @@ public class AudioDecoder {
 
             int outputBufIndex = res;
             ByteBuffer buf = mOutputBuffers[outputBufIndex];
+            buf.position(0);
             mResult.set(buf, info.size / 2);
             mDecoder.releaseOutputBuffer(outputBufIndex, false /* render */);
             if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
@@ -110,11 +123,11 @@ public class AudioDecoder {
         return !mOutputEOS;
     }
 
-    public int getChannelCount(){
+    public int getChannelCount() {
         return mNumChannel;
     }
 
-    public int getSampleRate(){
+    public int getSampleRate() {
         return mSampleRate;
     }
 
@@ -125,7 +138,7 @@ public class AudioDecoder {
         mOutputBuffers = mDecoder.getOutputBuffers();
     }
 
-    public void release(){
+    public void release() {
         mExtractor.release();
         mExtractor = null;
         mDecoder.stop();
@@ -150,25 +163,35 @@ public class AudioDecoder {
             }
             this.size = size;
             for (int i = 0; i < size; i++) {
-                data[i] = buf.getShort(i);
+                data[i] = buf.getShort(i * 2);
             }
+            //           StringBuilder sb = new StringBuilder();
+            //           for(int i = 0; i < size; i ++){
+            //               sb.append(String.format("[%d]%04h", i % 2, data[i]));
+            //           }
+            //           Log.e(TAG + " set", sb.toString());
         }
 
-        public void get(DecodedSample other){
-            if(other.size < this.size){
+        public void get(DecodedSample other) {
+            if (other.size < this.size) {
                 other.data = Arrays.copyOf(this.data, this.size);
-            } else{
+            } else {
                 System.arraycopy(this.data, 0, other.data, 0, this.size);
             }
             other.size = this.size;
         }
 
-        public boolean valid(int id){
+        public boolean valid(int id) {
             return id < size;
         }
 
-        public short get(int id){
-            return data[id];
+        public short get(int id) {
+          //  if (id % 2 == 0) {
+                //    return (short) ((data[id] & 0xff00) | ((data[id + 1] ) & 0xff));
+                return data[id];
+          //  }
+           // return (short) (((data[id] << 8) & 0xff00) | ((data[id] >> 8) & 0xff));
+            //return (short) ((data[id - 1] << 8) & 0xff00 | ((data[id] >> 8)& 0xff));
         }
     }
 

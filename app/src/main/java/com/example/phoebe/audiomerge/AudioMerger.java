@@ -1,11 +1,9 @@
 package com.example.phoebe.audiomerge;
 
 import android.media.MediaFormat;
-import android.os.Environment;
 import android.util.Log;
 
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -38,7 +36,7 @@ public class AudioMerger {
         mDecoders = new ArrayList<>();
     }
 
-    public void addSource(String filePath, int delayMS) {
+    public void addSource(String filePath, int delayMS, boolean flipped) {
 //        AudioSource as = new AudioSource();
 //        as.filePath = filePath;
 //        as.delayMS = delayMS;
@@ -46,7 +44,7 @@ public class AudioMerger {
 //            mAudioSources = new ArrayList<>();
 //        }
         //       mAudioSources.add(as);
-        DecoderWrapper decoder = new DecoderWrapper(filePath, delayMS * 1000000);
+        DecoderWrapper decoder = new DecoderWrapper(filePath, delayMS * 1000000, flipped);
         mDecoders.add(decoder);
     }
 
@@ -78,20 +76,27 @@ public class AudioMerger {
 
         while (mDecodedIndex < mDataSize) {
 //            Log.e(TAG, "time = " + mDecodedTimeNS);
-            short mixed = mix(decoder0.getValue(mDecodedTimeNS), decoder1.getValue(mDecodedTimeNS));
+            short sample0 = decoder0.getValue(mDecodedTimeNS);
+            short sample1 = decoder1.getValue(mDecodedTimeNS);
+            short mixed = mix(sample0, sample1);
+            //short mixed = sample1;
             if (mDecodedIndex % 1000 == 0) {
-  //              Log.e(TAG + mDecodedTimeNS, "value = " + mDecoded[mDecodedIndex]);
+                //              Log.e(TAG + mDecodedTimeNS, "value = " + mDecoded[mDecodedIndex]);
             }
-
-            mDecoded[mDecodedIndex ++] = (byte)(mixed & 0xFF);
-            mDecoded[mDecodedIndex ++] = (byte)((mixed >>8) & 0xFF);
+           // if(mDecodedIndex % 4 == 0) {
+            mDecoded[mDecodedIndex++] = (byte) (mixed & 0xFF);
+            mDecoded[mDecodedIndex++] = (byte) ((mixed >> 8) & 0xFF);
+           // } else{
+            //    mDecoded[mDecodedIndex++] = (byte) (mixed & 0xFF);
+            //    mDecoded[mDecodedIndex++] = (byte) ((mixed >> 8) & 0xFF);
+           // }
             mDecodedTimeNS += mSampleTimeNS;
         }
         for (DecoderWrapper decoder : mDecoders) {
             decoder.release();
         }
 
-        MediaFormat format  = new MediaFormat();
+        MediaFormat format = new MediaFormat();
         format.setString(MediaFormat.KEY_MIME, "audio/mp4a-latm");
         format.setInteger(
                 MediaFormat.KEY_AAC_PROFILE, 2);
@@ -99,7 +104,7 @@ public class AudioMerger {
                 MediaFormat.KEY_SAMPLE_RATE, mSampleRate);
         format.setInteger(MediaFormat.KEY_CHANNEL_COUNT, 1);
         format.setInteger(MediaFormat.KEY_BIT_RATE, 64000);
-        new AudioEncoderTest().testEncoder(mDecoded,"audio/mp4a-latm", format);
+        new AudioEncoderTest().testEncoder(mDecoded, "audio/mp4a-latm", format);
         Log.e(TAG, "end");
     }
 
@@ -126,13 +131,16 @@ public class AudioMerger {
         private long delayTimeNS;
         private short currentIndex;
         private boolean eos = false;
+        private String name;
+        private boolean flipped;
 
-
-        private DecoderWrapper(String filePath, long delayTimeNS) {
+        private DecoderWrapper(String filePath, long delayTimeNS, boolean flipped) {
             decoderCore = new AudioDecoder(filePath);
             decodedSample = new AudioDecoder.DecodedSample();
             this.delayTimeNS = delayTimeNS;
             this.frameTimeNS = delayTimeNS;
+            this.name = filePath.substring(filePath.length() - 10);
+            this.flipped = flipped;
         }
 
         private void prepare() {
@@ -150,27 +158,41 @@ public class AudioMerger {
             return decoderCore;
         }
 
+        private short getValue(long timeNS){
+//            if(flipped) {
+//                return flipByte(_getValue(timeNS));
+//            }
+            //return _getValue(timeNS);
+            if(decodedSample.valid(currentIndex)){
+                short sample =  decodedSample.get(currentIndex);
+                currentIndex += numChannel;
+                return sample;
+            }
+            pollSample();
+            currentIndex = 0;
+            return getValue(timeNS);
+        }
 
-        private short getValue(long timeNS) {
+        private short _getValue(long timeNS) {
             if (eos || timeNS < delayTimeNS) {
                 return 0;
             }
             if (timeNS <= frameTimeNS) {
                 while (!eos && !decodedSample.valid(currentIndex)) {
-  //                  Log.e(TAG, "call poll 0");
+                    //                  Log.e(TAG, "call poll 0");
                     pollSample();
                     currentIndex = 0;
                 }
                 if (eos) {
-//                    return 0;
+                    return 0;
                 }
                 return decodedSample.get(currentIndex);
             }
             while (!eos && frameTimeNS < timeNS) {
                 frameTimeNS += sampleTimeNS;
-                currentIndex+= numChannel;
+                currentIndex += numChannel;
                 if (!decodedSample.valid(currentIndex)) {
- //                   Log.e(TAG, "frameNS = " + frameTimeNS + " timeNS = " + timeNS + " sampleTimeNs = " + sampleTimeNS);
+                    //                   Log.e(TAG, "frameNS = " + frameTimeNS + " timeNS = " + timeNS + " sampleTimeNs = " + sampleTimeNS);
                     pollSample();
                     currentIndex = 0;
                 }
@@ -187,8 +209,11 @@ public class AudioMerger {
                 Log.e(TAG, "eos");
                 release();
             } else {
-                decoderCore.getSample().get(decodedSample);
+                decodedSample = decoderCore.getSample();
+                //decoderCore.getSample().get(decodedSample);
             }
+
+            Log.e("pollSample " + name, "wrapperTime = " + frameTimeNS / 1000 + " coreTime = " + decoderCore.getSamplePresentationTimeUs());
         }
 
         private synchronized void release() {
@@ -199,6 +224,11 @@ public class AudioMerger {
                 decodedSample = null;
             }
         }
+    }
+
+
+    private short flipByte(short src) {
+        return (short) (((src << 8) & 0xff00) | ((src >> 8) & 0xff));
     }
 
 

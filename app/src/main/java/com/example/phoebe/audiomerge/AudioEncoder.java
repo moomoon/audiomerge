@@ -106,7 +106,7 @@ public class AudioEncoder {
 
         } finally {
             if(sawOutputEOS)
-            mOutputFile.close();
+                mOutputFile.close();
         }
     }
 

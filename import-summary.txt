@@ -7,21 +7,18 @@ The following files were *not* copied into the new Gradle project; you
 should evaluate whether these are still needed in your project and if
 so manually move them:
 
-* .gitignore
+* .gitmodules
+* LICENSE
 * README.md
-* build.xml
-* proguard.cfg
 
 Moved Files:
 ------------
 Android Gradle projects use a different directory structure than ADT
 Eclipse projects. Here's how the projects were restructured:
 
-* AndroidManifest.xml => aacenc/src/main/AndroidManifest.xml
-* jni/ => aacenc/src/main/jni/
-* libs/xom-1.2.7.jar => aacenc/libs/xom-1.2.7.jar
-* res/ => aacenc/src/main/res/
-* src/ => aacenc/src/main/java/
+* AndroidManifest.xml => androidffmpeglibrary/src/main/AndroidManifest.xml
+* res/ => androidffmpeglibrary/src/main/res/
+* src/ => androidffmpeglibrary/src/main/java/
 
 Next Steps:
 -----------
